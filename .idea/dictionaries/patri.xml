@@ -4,6 +4,8 @@
       <w>allsprites</w>
       <w>colorkey</w>
       <w>hitbox</w>
+      <w>imagesdict</w>
+      <w>midbottom</w>
       <w>midtop</w>
       <w>newpos</w>
       <w>unpunch</w>
