@@ -1,8 +1,7 @@
-import pygame
-from pygame.locals import *
 import os
-import numpy as np
 from enum import Enum
+import itertools
+import pygame
 from PIL import Image
 
 main_dir = os.path.split(os.path.abspath(__file__))[0]
@@ -52,7 +51,7 @@ def load_image(name, colorkey=None):
         image = pygame.image.load(fullname)
     except pygame.error:
         print('Cannot load image:', fullname)
-        raise SystemExit(str(geterror()))
+        raise SystemExit(pygame.compat.geterror())
     image = image.convert()
     if colorkey is not None:
         if colorkey is -1:
@@ -120,34 +119,23 @@ class LuckyBlock(pygame.sprite.DirtySprite):
         screen = pygame.display.get_surface()
         self.area = screen.get_rect()
         self.layer = 1
-        self.image = load_image('lucky_block.png', (250, 250, 250))
+        self.image = load_image('luckyblock.png', (250, 250, 250))
         self.rect = self.image.get_rect()
-        self.rect.midbottom = (300, 230)
+        self.rect.midbottom = (300, 210)
 
 
 class CharacterSprite(pygame.sprite.DirtySprite):
-    def __init__(self, position, posattr='midbottom'):
+    def __init__(self, position ):
         pygame.sprite.DirtySprite.__init__(self)  # call Sprite initializer
         screen = pygame.display.get_surface()
         self.area = screen.get_rect()
         self.layer = 1
-        self._posattr = posattr
-        self._state = CHARACTER_STATES.stopped
+        self.state = CHARACTER_STATES.stopped
         self._direction = 1
         self._load_images()
-        self._init_state_image_cycles()
         self.rect = self.image.get_rect()
-        self.position = position
-        self.velocity = (0, 0)
-        self.acceleration = (0, 0)
-
-    @property
-    def state(self):
-        return self._state
-
-    @state.setter
-    def state(self, value):
-        self._state = value
+        self.velocity = [0, 0]
+        self.acceleration = [0, 0]
 
     @property
     def direction(self):
@@ -158,15 +146,6 @@ class CharacterSprite(pygame.sprite.DirtySprite):
         if self._direction != direction:
             self._direction = direction
             self._flip_images()
-
-    @property
-    def style(self):
-        return self._style
-
-    @style.setter
-    def style(self, value):
-        self._style = value
-        self._load_images()
 
     @property
     def image(self):
@@ -181,32 +160,25 @@ class CharacterSprite(pygame.sprite.DirtySprite):
     def position(self, value):
         setattr(self.rect, self._posattr, value)
 
-    def _init_state_image_cycles(self):
-        self._state_image_cycles = {}
-
     def update(self):
         pass
+
 
 class Mario(CharacterSprite):
     def __init__(self, position, style=CHARACTER_STYLES.big):
         self._style = style
         CharacterSprite.__init__(self, position)
-        self._init_state_image_cycles()
         self.running_speed = 4
+        self.leg_cadence = 2  # higher is slower
         self.jumping_speed = 12
 
     def _load_images(self):
         self._images = {}
-        for k, v  in IMAGES_DICT[self.style].items():
+        for k, v in IMAGES_DICT[self.style].items():
             images = []
             for filename in v:
                 images.append(load_image(filename, -1))
-            self._images[k] = images
-
-    def _init_state_image_cycles(self):
-        self._state_image_cycles = {}
-        for k, v in self._images.items():
-            self._state_image_cycles[k] = 0
+            self._images[k] = itertools.cycle(images)
 
     def run(self, direction):
         self.direction = direction
@@ -233,20 +205,19 @@ class Mario(CharacterSprite):
             self.velocity = (0, 0)
 
     def _flip_images(self):
-        for k, v  in self._images.items():
+        for k, v in self._images.items():
             images = []
             for image in v:
                 images.append(pygame.transform.flip(image, 1, 0))
             self._images[k] = images
 
     def _cycle_images(self):
+
         n_cycles = len(self._images[self.state])
         if n_cycles > 1:
             prev_n = self._state_image_cycles[self.state]
-            next_n = (prev_n+1) % (n_cycles -1)
+            next_n = (prev_n + 1) % (n_cycles - 1)
             self._state_image_cycles[self.state] = next_n
-
-
 
     def update(self):
         newpos = self.rect.move(self.velocity)
@@ -255,6 +226,7 @@ class Mario(CharacterSprite):
         self.rect = newpos
         self._cycle_images()
         self.velocity = (self.velocity[0] + self.acceleration[0], self.velocity[1] + self.acceleration[1])
+
 
 class Game:
     def __init__(self):
@@ -305,5 +277,3 @@ class Game:
                 self.allsprites.draw(self.screen)
                 pygame.display.flip()
         pygame.quit()
-
-
