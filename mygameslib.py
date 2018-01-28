@@ -26,7 +26,7 @@ IMAGES_DICT = {CHARACTER_STYLES.big:
                     },
                }
 GRAVITY = 1
-
+GROUND_LEVEL = 293
 
 def repeat_image(image_path, nrepeat=2):
     image = Image.open(image_path)
@@ -56,7 +56,7 @@ def load_image(name, colorkey=None):
     if colorkey is not None:
         if colorkey is -1:
             colorkey = image.get_at((0, 0))
-        image.set_colorkey(colorkey, RLEACCEL)
+        image.set_colorkey(colorkey, pygame.RLEACCEL)
     return image
 
 
@@ -125,17 +125,30 @@ class LuckyBlock(pygame.sprite.DirtySprite):
 
 
 class CharacterSprite(pygame.sprite.DirtySprite):
-    def __init__(self, position ):
+    def __init__(self):
         pygame.sprite.DirtySprite.__init__(self)  # call Sprite initializer
+        self._load_images()
         screen = pygame.display.get_surface()
         self.area = screen.get_rect()
         self.layer = 1
-        self.state = CHARACTER_STATES.stopped
         self._direction = 1
-        self._load_images()
+        self._state = CHARACTER_STATES.stopped
+        self._sub_states = itertools.cycle(range(len(self._images[self._state])))
+        self._sub_state = next(self._sub_states)
         self.rect = self.image.get_rect()
         self.velocity = [0, 0]
-        self.acceleration = [0, 0]
+        self.acceleration = [0, GRAVITY]
+
+    def _load_images(self):
+        self._images = {}
+        self._state_cycles = {}
+        for k, v in IMAGES_DICT[self._style].items():
+            self._images[k] = [load_image(filename, -1) for filename in v]
+            self._state_cycles[k] = itertools.cycle(range(len(v)))
+
+    def _flip_images(self):
+        for k, v in self._images.items():
+            self._images[k] = [pygame.transform.flip(x, 1, 0) for x in v]
 
     @property
     def direction(self):
@@ -148,84 +161,71 @@ class CharacterSprite(pygame.sprite.DirtySprite):
             self._flip_images()
 
     @property
-    def image(self):
-        state_images = self._images[self.state]
-        return state_images[self._state_image_cycles[self.state]]
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, new_state):
+        self._state = new_state
+
+    def _cycle_sub_state(self):
+        sub_states = self._state_cycles[self.state]
+        self._sub_state = next(sub_states)
 
     @property
-    def position(self):
-        return getattr(self.rect, self._posattr)
-
-    @position.setter
-    def position(self, value):
-        setattr(self.rect, self._posattr, value)
+    def image(self):
+        return self._images[self.state][self._sub_state]
 
     def update(self):
         pass
 
 
 class Mario(CharacterSprite):
-    def __init__(self, position, style=CHARACTER_STYLES.big):
+    def __init__(self, style=CHARACTER_STYLES.big):
         self._style = style
-        CharacterSprite.__init__(self, position)
+        CharacterSprite.__init__(self)
         self.running_speed = 4
         self.leg_cadence = 2  # higher is slower
         self.jumping_speed = 12
 
-    def _load_images(self):
-        self._images = {}
-        for k, v in IMAGES_DICT[self.style].items():
-            images = []
-            for filename in v:
-                images.append(load_image(filename, -1))
-            self._images[k] = itertools.cycle(images)
-
     def run(self, direction):
         self.direction = direction
-        if self._on_solid_surface():
-            self.state = CHARACTER_STATES.running
-            self.velocity = (self.running_speed * direction, 0)
+        self.state = CHARACTER_STATES.running
+        self.velocity = [self.running_speed * direction, 0]
 
     def _on_solid_surface(self):
-        return self.rect.bottom == 293
+        return self.rect.bottom == GROUND_LEVEL
 
     def crouch(self):
         if self._on_solid_surface():
             self.state = CHARACTER_STATES.crouching
-            self.velocity = (0, 0)
+            self.velocity = [0, 0]
 
     def jump(self):
         self.state = CHARACTER_STATES.jumping
-        self.velocity = (self.velocity[0], -self.jumping_speed)
-        self.acceleration = (0, GRAVITY)
+        self.velocity[1] = -self.jumping_speed
 
     def stop(self):
         if self._on_solid_surface():
             self.state = CHARACTER_STATES.stopped
-            self.velocity = (0, 0)
+            self.velocity = self.acceleration = [0, 0]
 
-    def _flip_images(self):
-        for k, v in self._images.items():
-            images = []
-            for image in v:
-                images.append(pygame.transform.flip(image, 1, 0))
-            self._images[k] = images
-
-    def _cycle_images(self):
-
-        n_cycles = len(self._images[self.state])
-        if n_cycles > 1:
-            prev_n = self._state_image_cycles[self.state]
-            next_n = (prev_n + 1) % (n_cycles - 1)
-            self._state_image_cycles[self.state] = next_n
+    def _set_vectors(self):
+        newpos = self.rect.move(self.velocity)
+        if newpos[1] >= GROUND_LEVEL:
+            newpos[1] = GROUND_LEVEL
+            self.velocity[1] = self.acceleration[1] = 0
+        else:
+            self.velocity[0] += self.acceleration[0]
+            self.velocity[1] += self.acceleration[1]
+        self.rect = newpos
 
     def update(self):
-        newpos = self.rect.move(self.velocity)
-        if newpos.bottom > 293:
-            newpos.bottom = 293
-        self.rect = newpos
-        self._cycle_images()
-        self.velocity = (self.velocity[0] + self.acceleration[0], self.velocity[1] + self.acceleration[1])
+        self._cycle_sub_state()
+        self._set_vectors()
+
+
+
 
 
 class Game:
@@ -236,7 +236,8 @@ class Game:
         self.area = self.screen.get_rect()
         self.clock = pygame.time.Clock()
         self.level_backdrop = LevelBackdrop()
-        self.mario = Mario((50, 293))
+        self.mario = Mario()
+        self.mario.rect.midbottom = (50, GROUND_LEVEL)
         self.lucky_block = LuckyBlock()
         self.allsprites = pygame.sprite.RenderPlain(self.level_backdrop, self.mario, self.lucky_block)
         pygame.display.flip()
@@ -247,23 +248,24 @@ class Game:
         going = True
         while going:
             self.clock.tick(60)
-            keys = pygame.key.get_pressed()
-            if keys[K_RIGHT]:
-                self.mario.run(1)
-            elif keys[K_LEFT]:
-                self.mario.run(-1)
-            elif keys[K_UP]:
-                self.mario.jump()
-            elif keys[K_DOWN]:
-                self.crouch()
-            else:
-                self.mario.stop()
 
             for event in pygame.event.get():
-                if event.type == QUIT:
+                if event.type == pygame.QUIT:
                     going = False
-                elif event.type == KEYDOWN and event.key == K_ESCAPE:
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.paused = 1 - self.paused
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_RIGHT:
+                    self.mario.run(1)
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_LEFT:
+                    self.mario.run(-1)
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_UP:
+                    self.mario.jump()
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_DOWN:
+                    self.mario.crouch()
+                elif event.type == pygame.KEYUP:
+                    self.mario.stop()
+
+            keys = pygame.key.get_pressed()
 
             if not self.paused:
                 self.allsprites.update()
