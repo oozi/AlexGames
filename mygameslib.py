@@ -72,31 +72,11 @@ def load_sound(name):
 
     return sound
 
-
-# classes for our game objects
-class LevelBackdrop(pygame.sprite.DirtySprite):
+class FixedObjectSprite(pygame.sprite.Sprite):
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)  # call Sprite initializer
-        self.layer = 0
-        self.image_path = os.path.join(data_dir, 'supermariobackground.jpg')
-        self.repeat_image = True
-        self._load_image()
         screen = pygame.display.get_surface()
         self.area = screen.get_rect()
-        self.move = 4
-
-    def _load_image(self):
-        if self.repeat_image:
-            image = repeat_image(self.image_path, 2)
-            mode = image.mode
-            size = image.size
-            data = image.tobytes()
-            self.image = pygame.image.fromstring(data, size, mode).convert()
-            self.rect = self.image.get_rect()
-        else:
-            self.image, self.rect = load_image('supermariobackground.jpg')
-
-        self.rect.topleft = (0, 0)
 
     def pan(self, pan_amount):
         if self.rect.right + pan_amount < self.area.right:
@@ -108,9 +88,22 @@ class LevelBackdrop(pygame.sprite.DirtySprite):
 
         self.rect.move_ip((pan_amount, 0))
 
-    def update(self):
-        # self.pan_left()
-        pass
+
+class LevelBackdrop(FixedObjectSprite):
+    def __init__(self):
+        FixedObjectSprite.__init__(self)
+        self.image_path = os.path.join(data_dir, 'supermariobackground.jpg')
+        self._load_image()
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (0, 0)
+        self.move = 4
+
+    def _load_image(self):
+        image = repeat_image(self.image_path, 2)
+        mode = image.mode
+        size = image.size
+        data = image.tobytes()
+        self.image = pygame.image.fromstring(data, size, mode).convert()
 
 
 class LuckyBlock(pygame.sprite.DirtySprite):
@@ -118,30 +111,35 @@ class LuckyBlock(pygame.sprite.DirtySprite):
         pygame.sprite.DirtySprite.__init__(self)
         screen = pygame.display.get_surface()
         self.area = screen.get_rect()
-        self.layer = 1
         self.image = load_image('luckyblock.png', (250, 250, 250))
         self.rect = self.image.get_rect()
         self.rect.midbottom = (300, 210)
 
+    def pan(self, pan_amount):
+        self.rect.move_ip((pan_amount, 0))
+
 
 class CharacterSprite(pygame.sprite.DirtySprite):
-    def __init__(self):
+    def __init__(self, start_position):
         pygame.sprite.DirtySprite.__init__(self)  # call Sprite initializer
-        self._load_images()
         screen = pygame.display.get_surface()
         self.area = screen.get_rect()
+        self._load_images()
         self.layer = 1
         self._direction = 1
         self._state = CHARACTER_STATES.stopped
         self._sub_states = itertools.cycle(range(len(self._images[self._state])))
         self._sub_state = next(self._sub_states)
         self.rect = self.image.get_rect()
+        self.rect.midbottom = start_position
         self.velocity = [0, 0]
         self.acceleration = [0, GRAVITY]
 
     def _load_images(self):
         self._images = {}
         self._state_cycles = {}
+
+
         for k, v in IMAGES_DICT[self._style].items():
             self._images[k] = [load_image(filename, -1) for filename in v]
             self._state_cycles[k] = itertools.cycle(range(len(v)))
@@ -181,9 +179,9 @@ class CharacterSprite(pygame.sprite.DirtySprite):
 
 
 class Mario(CharacterSprite):
-    def __init__(self, style=CHARACTER_STYLES.big):
+    def __init__(self, start_position=(0,0), style=CHARACTER_STYLES.big ):
         self._style = style
-        CharacterSprite.__init__(self)
+        CharacterSprite.__init__(self, start_position)
         self.running_speed = 4
         self.leg_cadence = 2  # higher is slower
         self.jumping_speed = 12
@@ -202,29 +200,50 @@ class Mario(CharacterSprite):
             self.velocity = [0, 0]
 
     def jump(self):
-        self.state = CHARACTER_STATES.jumping
-        self.velocity[1] = -self.jumping_speed
+        if self._on_solid_surface():
+            self.state = CHARACTER_STATES.jumping
+            self.velocity[1] = -self.jumping_speed
 
     def stop(self):
         if self._on_solid_surface():
             self.state = CHARACTER_STATES.stopped
-            self.velocity = self.acceleration = [0, 0]
+            self.velocity = [0, 0]
 
-    def _set_vectors(self):
+    def _update_vectors(self):
+        orig_pos = self.rect
+        self.rect = self.image.get_rect(midbottom=orig_pos.midbottom)
         newpos = self.rect.move(self.velocity)
-        if newpos[1] >= GROUND_LEVEL:
-            newpos[1] = GROUND_LEVEL
-            self.velocity[1] = self.acceleration[1] = 0
+        if newpos.bottom >= GROUND_LEVEL:
+            newpos.bottom = GROUND_LEVEL
+            self.velocity[1] = 0
         else:
             self.velocity[0] += self.acceleration[0]
             self.velocity[1] += self.acceleration[1]
+
         self.rect = newpos
+
+    def _update_state(self):
+        if self.state == CHARACTER_STATES.jumping:
+            if self.rect.bottom == GROUND_LEVEL:
+                if abs(self.velocity[0]) > 0:
+                    self.state = CHARACTER_STATES.running
+                else:
+                    self.state = CHARACTER_STATES.stopped
 
     def update(self):
         self._cycle_sub_state()
-        self._set_vectors()
+        self._update_vectors()
+        self._update_state()
 
-
+class Ground(pygame.sprite.DirtySprite):
+    def __init__(self, ground_level):
+        pygame.sprite.DirtySprite.__init__(self)
+        screen = pygame.display.get_surface()
+        self.area = screen.get_rect()
+        self.image = pygame.Surface((self.area.width, self.area.height - ground_level))
+        self.image.set_colorkey(self.image.get_at((0,0)), pygame.RLEACCEL)
+        self.rect = self.image.get_rect()
+        self.rect.top = ground_level
 
 
 
@@ -236,10 +255,10 @@ class Game:
         self.area = self.screen.get_rect()
         self.clock = pygame.time.Clock()
         self.level_backdrop = LevelBackdrop()
-        self.mario = Mario()
-        self.mario.rect.midbottom = (50, GROUND_LEVEL)
+        self.mario = Mario((50, GROUND_LEVEL))
         self.lucky_block = LuckyBlock()
-        self.allsprites = pygame.sprite.RenderPlain(self.level_backdrop, self.mario, self.lucky_block)
+        self.ground = Ground(GROUND_LEVEL)
+        self.allsprites = pygame.sprite.RenderPlain( self.level_backdrop, self.ground, self.mario, self.lucky_block,)
         pygame.display.flip()
         self.paused = False
         self.run()
@@ -272,10 +291,13 @@ class Game:
                 movebackdrop = min(0, self.area.centerx - self.mario.rect.centerx)
                 if movebackdrop < 0:
                     self.level_backdrop.pan(movebackdrop)
+                    self.lucky_block.pan(movebackdrop)
                     self.mario.rect.centerx = self.area.centerx
+
                 if self.mario.rect.left < self.area.left:
                     self.mario.rect.left = self.area.left
 
                 self.allsprites.draw(self.screen)
                 pygame.display.flip()
+
         pygame.quit()

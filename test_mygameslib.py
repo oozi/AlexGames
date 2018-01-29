@@ -6,8 +6,7 @@ from mygameslib import *
 class TestMarioBase(unittest.TestCase):
     def setUp(self):
         self.screen = pygame.display.set_mode((600, 337))
-        self.mario = Mario()
-        self.mario.rect.midbottom = (50, GROUND_LEVEL)
+        self.mario = Mario((50, GROUND_LEVEL))
 
     def testInit(self):
         self.assertTrue(isinstance(self.mario, Mario))
@@ -78,7 +77,7 @@ class TestMarioStates(TestMarioBase):
         self.assertEqual(self.mario.state, CHARACTER_STATES.stopped)
 
     def testRunningJump(self):
-        self.mario.run()
+        self.mario.run(1)
         self.mario.update()
         self.mario.jump()
         self.mario.update()
