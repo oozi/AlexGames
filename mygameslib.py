@@ -1,4 +1,5 @@
 import os
+import math
 from enum import Enum
 import itertools
 import pygame
@@ -72,6 +73,13 @@ def load_sound(name):
 
     return sound
 
+class CycleCounter(itertools.cycle):
+    def __init__(self, iterable):
+        self.iterable = iterable
+
+    def __iter__(self):
+        return itertools.cycle.__iter__(self)
+
 class FixedObjectSprite(pygame.sprite.Sprite):
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)  # call Sprite initializer
@@ -134,6 +142,8 @@ class CharacterSprite(pygame.sprite.DirtySprite):
         self.rect.midbottom = start_position
         self.velocity = [0, 0]
         self.acceleration = [0, GRAVITY]
+        self._cycle_cadence = 2  # higher is slower
+        self._wait_cycle = itertools.cycle(range(self._cycle_cadence))
 
     def _load_images(self):
         self._images = {}
@@ -142,7 +152,8 @@ class CharacterSprite(pygame.sprite.DirtySprite):
 
         for k, v in IMAGES_DICT[self._style].items():
             self._images[k] = [load_image(filename, -1) for filename in v]
-            self._state_cycles[k] = itertools.cycle(range(len(v)))
+            if len(v) > 1:
+                self._state_cycles[k] = itertools.cycle(range(len(v)))
 
     def _flip_images(self):
         for k, v in self._images.items():
@@ -167,12 +178,20 @@ class CharacterSprite(pygame.sprite.DirtySprite):
         self._state = new_state
 
     def _cycle_sub_state(self):
-        sub_states = self._state_cycles[self.state]
-        self._sub_state = next(sub_states)
+        sub_states = self._state_cycles.get(self.state, False):
+        if
+            if next(self._wait_cycle) == self._cycle_cadence - 1:
+                sub_states = self._state_cycles[self.state]
+                self._sub_state = next(sub_states)
+        else:
+            self._sub_state = 0
 
     @property
     def image(self):
-        return self._images[self.state][self._sub_state]
+        try:
+            return self._images[self.state][self._sub_state]
+        except:
+            print('')
 
     def update(self):
         pass
@@ -183,21 +202,20 @@ class Mario(CharacterSprite):
         self._style = style
         CharacterSprite.__init__(self, start_position)
         self.running_speed = 4
-        self.leg_cadence = 2  # higher is slower
-        self.jumping_speed = 12
+        self.jumping_speed = 20
 
     def run(self, direction):
         self.direction = direction
-        self.state = CHARACTER_STATES.running
-        self.velocity = [self.running_speed * direction, 0]
-
-    def _on_solid_surface(self):
-        return self.rect.bottom == GROUND_LEVEL
+        if self.velocity[1] == 0:
+            self.state = CHARACTER_STATES.running
+            self.velocity[0] = self.running_speed * direction
+        else:
+            self.velocity[0] = self.running_speed * direction / 2
 
     def crouch(self):
-        if self._on_solid_surface():
+        if self.velocity[1] == 0:
             self.state = CHARACTER_STATES.crouching
-            self.velocity = [0, 0]
+
 
     def jump(self):
         if self._on_solid_surface():
@@ -205,22 +223,16 @@ class Mario(CharacterSprite):
             self.velocity[1] = -self.jumping_speed
 
     def stop(self):
-        if self._on_solid_surface():
+        if self.velocity[1] == 0:
             self.state = CHARACTER_STATES.stopped
-            self.velocity = [0, 0]
+            self.velocity[0] = 0
 
     def _update_vectors(self):
         orig_pos = self.rect
         self.rect = self.image.get_rect(midbottom=orig_pos.midbottom)
-        newpos = self.rect.move(self.velocity)
-        if newpos.bottom >= GROUND_LEVEL:
-            newpos.bottom = GROUND_LEVEL
-            self.velocity[1] = 0
-        else:
-            self.velocity[0] += self.acceleration[0]
-            self.velocity[1] += self.acceleration[1]
-
-        self.rect = newpos
+        self.rect.move_ip(self.velocity)
+        self.velocity[0] += self.acceleration[0]
+        self.velocity[1] += self.acceleration[1]
 
     def _update_state(self):
         if self.state == CHARACTER_STATES.jumping:
@@ -288,6 +300,38 @@ class Game:
 
             if not self.paused:
                 self.allsprites.update()
+
+                if self.mario.rect.colliderect(self.ground.rect):
+                    self.mario.rect.bottom = self.ground.rect.top
+                    self.mario.velocity[1] = 0
+
+                if self.mario.rect.colliderect(self.lucky_block.rect):
+                    t1_pos = self.mario.rect
+                    dx = self.mario.velocity[0]
+                    dy = self.mario.velocity[1]
+                    t0_pos = self.mario.rect.move((-dx, -dy))
+
+                    collision_direction = [0, 0] # where [1,0] means from the left, [-1,0] from the right etc.
+                    # movement along one axis at the time
+                    test_pos = t0_pos.move((dx, 0))
+                    if test_pos.colliderect(self.lucky_block.rect):
+                        if dx > 0:
+                            self.mario.rect.right = self.lucky_block.rect.left
+                        else:
+                            self.mario.rect.left = self.lucky_block.rect.right
+
+                        self.mario.velocity[0] = 0
+
+                    test_pos = t0_pos.move((0, dy))
+                    if test_pos.colliderect(self.lucky_block.rect):
+                        if dy > 0:
+                            self.mario.rect.bottom = self.lucky_block.rect.top
+                        else:
+                            self.mario.rect.top = self.lucky_block.rect.bottom
+
+                        self.mario.velocity[1] = 0
+
+
                 movebackdrop = min(0, self.area.centerx - self.mario.rect.centerx)
                 if movebackdrop < 0:
                     self.level_backdrop.pan(movebackdrop)
@@ -296,6 +340,9 @@ class Game:
 
                 if self.mario.rect.left < self.area.left:
                     self.mario.rect.left = self.area.left
+
+
+
 
                 self.allsprites.draw(self.screen)
                 pygame.display.flip()
