@@ -1,29 +1,37 @@
 import os
-import math
 from enum import Enum
 import itertools
 import pygame
 from PIL import Image
 
-main_dir = os.path.split(os.path.abspath(__file__))[0]
-data_dir = os.path.join(main_dir, 'data')
+MAIN_DIR = os.path.split(os.path.abspath(__file__))[0]
+DATA_DIR = os.path.join(MAIN_DIR, 'data')
 
-CHARACTER_STATES = Enum('Character State', ['stopped', 'running', 'breaking', 'jumping', 'crouching'])
-CHARACTER_STYLES = Enum('Character Style', ['big', 'small', 'fire'])
+class CharacterState(Enum):
+    STOPPED = 1
+    RUNNING = 2
+    BREAKING = 3
+    JUMPING = 4
+    CROUCHING = 5
 
-IMAGES_DICT = {CHARACTER_STYLES.big:
-                   {CHARACTER_STATES.stopped: ['mario0.png'],
-                    CHARACTER_STATES.running: ['mario1.png', 'mario2.png', 'mario3.png'],
-                    CHARACTER_STATES.breaking: ['mario4.png'],
-                    CHARACTER_STATES.jumping: ['mario5.png'],
-                    CHARACTER_STATES.crouching: ['mario6.png'],
+class CharacterStyle(Enum):
+    BIG = 1
+    SMALL = 2
+    FIRE = 3
+
+IMAGES_DICT = {CharacterStyle.BIG:
+                   {CharacterState.STOPPED: ['mario0.png'],
+                    CharacterState.RUNNING: ['mario1.png', 'mario2.png', 'mario3.png'],
+                    CharacterState.BREAKING: ['mario4.png'],
+                    CharacterState.JUMPING: ['mario5.png'],
+                    CharacterState.CROUCHING: ['mario6.png'],
                     },
-               CHARACTER_STYLES.small:
-                   {CHARACTER_STATES.stopped: ['mario0_mini.png'],
-                    CHARACTER_STATES.running: ['mario1_mini.png', 'mario2_mini.png', 'mario3_mini.png'],
-                    CHARACTER_STATES.breaking: ['mario4_mini.png'],
-                    CHARACTER_STATES.jumping: ['mario5_mini.png'],
-                    CHARACTER_STATES.crouching: ['mario6_mini.png'],
+               CharacterStyle.SMALL:
+                   {CharacterState.STOPPED: ['mario0_mini.png'],
+                    CharacterState.RUNNING: ['mario1_mini.png', 'mario2_mini.png', 'mario3_mini.png'],
+                    CharacterState.BREAKING: ['mario4_mini.png'],
+                    CharacterState.JUMPING: ['mario5_mini.png'],
+                    CharacterState.CROUCHING: ['mario6_mini.png'],
                     },
                }
 GRAVITY = 1
@@ -47,12 +55,12 @@ def repeat_image(image_path, nrepeat=2):
 
 
 def load_image(name, colorkey=None):
-    fullname = os.path.join(data_dir, name)
+    fullname = os.path.join(DATA_DIR, name)
     try:
         image = pygame.image.load(fullname)
-    except pygame.error:
+    except pygame.error as message:
         print('Cannot load image:', fullname)
-        raise SystemExit(pygame.compat.geterror())
+        raise SystemExit(message)
     image = image.convert()
     if colorkey is not None:
         if colorkey is -1:
@@ -67,7 +75,7 @@ def load_sound(name):
 
     if not pygame.mixer or not pygame.mixer.get_init():
         return NoneSound()
-    fullname = os.path.join(data_dir, name)
+    fullname = os.path.join(DATA_DIR, name)
 
     sound = pygame.mixer.Sound(fullname)
 
@@ -100,7 +108,7 @@ class FixedObjectSprite(pygame.sprite.Sprite):
 class LevelBackdrop(FixedObjectSprite):
     def __init__(self):
         FixedObjectSprite.__init__(self)
-        self.image_path = os.path.join(data_dir, 'supermariobackground.jpg')
+        self.image_path = os.path.join(DATA_DIR, 'supermariobackground.jpg')
         self._load_image()
         self.rect = self.image.get_rect()
         self.rect.topleft = (0, 0)
@@ -135,7 +143,7 @@ class CharacterSprite(pygame.sprite.DirtySprite):
         self._load_images()
         self.layer = 1
         self._direction = 1
-        self._state = CHARACTER_STATES.stopped
+        self._state = CharacterState.STOPPED
         self._sub_states = itertools.cycle(range(len(self._images[self._state])))
         self._sub_state = next(self._sub_states)
         self.rect = self.image.get_rect()
@@ -179,7 +187,7 @@ class CharacterSprite(pygame.sprite.DirtySprite):
 
     def _cycle_sub_state(self):
         sub_states = self._state_cycles.get(self.state, False)
-        if
+        if sub_states:
             if next(self._wait_cycle) == self._cycle_cadence - 1:
                 sub_states = self._state_cycles[self.state]
                 self._sub_state = next(sub_states)
@@ -193,12 +201,17 @@ class CharacterSprite(pygame.sprite.DirtySprite):
         except:
             print('')
 
+    def _on_solid_surface(self):
+        if self.area.bottom == 337:
+            return(True)
+        return(False)
+
     def update(self):
         pass
 
 
 class Mario(CharacterSprite):
-    def __init__(self, start_position=(0,0), style=CHARACTER_STYLES.big ):
+    def __init__(self, start_position=(0,0), style=CharacterStyle.BIG ):
         self._style = style
         CharacterSprite.__init__(self, start_position)
         self.running_speed = 4
@@ -207,24 +220,24 @@ class Mario(CharacterSprite):
     def run(self, direction):
         self.direction = direction
         if self.velocity[1] == 0:
-            self.state = CHARACTER_STATES.running
+            self.state = CharacterState.RUNNING
             self.velocity[0] = self.running_speed * direction
         else:
             self.velocity[0] = self.running_speed * direction / 2
 
     def crouch(self):
         if self.velocity[1] == 0:
-            self.state = CHARACTER_STATES.crouching
+            self.state = CharacterState.CROUCHING
 
 
     def jump(self):
         if self._on_solid_surface():
-            self.state = CHARACTER_STATES.jumping
+            self.state = CharacterState.JUMPING
             self.velocity[1] = -self.jumping_speed
 
     def stop(self):
         if self.velocity[1] == 0:
-            self.state = CHARACTER_STATES.stopped
+            self.state = CharacterState.STOPPED
             self.velocity[0] = 0
 
     def _update_vectors(self):
@@ -235,12 +248,12 @@ class Mario(CharacterSprite):
         self.velocity[1] += self.acceleration[1]
 
     def _update_state(self):
-        if self.state == CHARACTER_STATES.jumping:
+        if self.state == CharacterState.JUMPING:
             if self.rect.bottom == GROUND_LEVEL:
                 if abs(self.velocity[0]) > 0:
-                    self.state = CHARACTER_STATES.running
+                    self.state = CharacterState.RUNNING
                 else:
-                    self.state = CHARACTER_STATES.stopped
+                    self.state = CharacterState.STOPPED
 
     def update(self):
         self._cycle_sub_state()
@@ -256,7 +269,6 @@ class Ground(pygame.sprite.DirtySprite):
         self.image.set_colorkey(self.image.get_at((0,0)), pygame.RLEACCEL)
         self.rect = self.image.get_rect()
         self.rect.top = ground_level
-
 
 
 class Game:
