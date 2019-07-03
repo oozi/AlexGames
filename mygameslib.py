@@ -178,7 +178,7 @@ class CharacterSprite(pygame.sprite.DirtySprite):
         self._state = new_state
 
     def _cycle_sub_state(self):
-        sub_states = self._state_cycles.get(self.state, False):
+        sub_states = self._state_cycles.get(self.state, False)
         if
             if next(self._wait_cycle) == self._cycle_cadence - 1:
                 sub_states = self._state_cycles[self.state]
